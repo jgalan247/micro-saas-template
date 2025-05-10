@@ -22,13 +22,13 @@ class Product(db.Model):
     description = db.Column(db.Text)
     price = db.Column(db.Float, nullable=False)
     available = db.Column(db.Boolean, default=True)
-    location_id = db.Column(db.Integer, db.ForeignKey('location.id'))
+    location_id = db.Column(db.Integer, db.ForeignKey('locations.id'))
 
 class Order(db.Model):
     __tablename__ = 'orders' 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-    product_id = db.Column(db.Integer, db.ForeignKey('product.id'))
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'))
     quantity = db.Column(db.Integer, default=1)
     total_price = db.Column(db.Float)
     timestamp = db.Column(db.DateTime)
