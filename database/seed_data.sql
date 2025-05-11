@@ -1,6 +1,6 @@
 -- Add a sample admin user
-INSERT INTO users (username, password, email, is_admin)
-VALUES ('admin', 'admin123hashed', 'admin@example.com', 1);
+INSERT INTO users (username, password, email, role, confirmed)
+VALUES ('admin', 'admin123', 'admin@example.com', 'super', 1);
 
 -- Add sample locations
 INSERT INTO locations (name, latitude, longitude)

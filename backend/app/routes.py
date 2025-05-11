@@ -1,17 +1,25 @@
-from flask import Blueprint, jsonify
-from .models import Product, Location
-from . import db
-from flask import request
-from .models import Order, User, Product
+"""
+backend/app/routes.py
+JSON API endpoints only (Blueprint: api)
+"""
 from datetime import datetime
-
-
+from flask import Blueprint, jsonify, request
 from sqlalchemy import inspect
+
+from . import db
+from .models import Product, Location, Order, User
+
 api = Blueprint('api', __name__)
 
+# ───────────────────────────── Products ────────────────────────────
 @api.route('/products')
 def get_products():
-    products = Product.query.all()
+    location_id = request.args.get('location_id')
+    query = Product.query
+    if location_id:
+        query = query.filter_by(location_id=location_id)
+
+    products = query.all()
     return jsonify([
         {
             "id": p.id,
@@ -20,130 +28,49 @@ def get_products():
             "price": p.price,
             "available": p.available,
             "location_id": p.location_id
-        }
-        for p in products
+        } for p in products
     ])
 
-@api.route('/debug_tables')
-def debug_tables():
-    inspector = inspect(db.engine)
-    return jsonify(inspector.get_table_names())
-
-@api.route('/orders', methods=['POST'])
-def create_order():
-    data = request.get_json()
-
-    user_id = data.get("user_id")
-    product_id = data.get("product_id")
-    quantity = data.get("quantity", 1)
-
-    # Basic input validation
-    if not user_id or not product_id:
-        return jsonify({"error": "Missing user_id or product_id"}), 400
-
-    # Fetch product
-    product = Product.query.get(product_id)
-    if not product or not product.available:
-        return jsonify({"error": "Invalid or unavailable product"}), 404
-
-    # Calculate total price
-    total_price = product.price * quantity
-
-    # Create new order
-    new_order = Order(
-        user_id=user_id,
-        product_id=product_id,
-        quantity=quantity,
-        total_price=total_price,
-        timestamp=datetime.now()
-    )
-
-    db.session.add(new_order)
-    db.session.commit()
-
-    return jsonify({
-        "message": "Order created successfully",
-        "order": {
-            "id": new_order.id,
-            "user_id": user_id,
-            "product_id": product_id,
-            "quantity": quantity,
-            "total_price": total_price,
-            "timestamp": new_order.timestamp
-        }
-    }), 201
-
-@api.route('/users', methods=['GET'])
-def get_users():
-    users = User.query.all()
-    return jsonify([
-        {
-            "id": u.id,
-            "username": u.username,
-            "email": u.email,
-            "is_admin": u.is_admin
-        }
-        for u in users
-    ])
-
-
-@api.route('/users', methods=['POST'])
-def create_user():
-    data = request.get_json()
-    username = data.get("username")
-    password = data.get("password")  # In real apps, hash this!
-    email = data.get("email")
-    is_admin = data.get("is_admin", False)
-
-    if not username or not password:
-        return jsonify({"error": "Username and password required"}), 400
-
-    user = User(username=username, password=password, email=email, is_admin=is_admin)
-    db.session.add(user)
-    db.session.commit()
-
-    return jsonify({"message": "User created", "user_id": user.id}), 201
 
 @api.route('/products', methods=['POST'])
 def create_product():
     data = request.get_json()
-    name = data.get("name")
-    description = data.get("description", "")
+    name  = data.get("name")
     price = data.get("price")
-    location_id = data.get("location_id")
-    available = data.get("available", True)
-
     if not name or price is None:
         return jsonify({"error": "Name and price are required"}), 400
 
-    product = Product(name=name, description=description, price=price,
-                      available=available, location_id=location_id)
+    product = Product(
+        name        = name,
+        description = data.get("description", ""),
+        price       = price,
+        available   = data.get("available", True),
+        location_id = data.get("location_id")
+    )
     db.session.add(product)
     db.session.commit()
-
     return jsonify({"message": "Product created", "product_id": product.id}), 201
 
 
-@api.route('/products/<int:id>', methods=['PUT'])
-def update_product(id):
-    product = Product.query.get(id)
+@api.route('/products/<int:pid>', methods=['PUT'])
+def update_product(pid):
+    product = Product.query.get(pid)
     if not product:
         return jsonify({"error": "Product not found"}), 404
 
     data = request.get_json()
-    product.name = data.get("name", product.name)
+    product.name        = data.get("name",        product.name)
     product.description = data.get("description", product.description)
-    product.price = data.get("price", product.price)
-    product.available = data.get("available", product.available)
+    product.price       = data.get("price",       product.price)
+    product.available   = data.get("available",   product.available)
     product.location_id = data.get("location_id", product.location_id)
-
     db.session.commit()
     return jsonify({"message": "Product updated"})
 
 
-@api.route('/products/<int:id>', methods=['DELETE'])
-def delete_product(id):
-    product = Product.query.get(id)
+@api.route('/products/<int:pid>', methods=['DELETE'])
+def delete_product(pid):
+    product = Product.query.get(pid)
     if not product:
         return jsonify({"error": "Product not found"}), 404
 
@@ -151,6 +78,8 @@ def delete_product(id):
     db.session.commit()
     return jsonify({"message": "Product deleted"})
 
+
+# ───────────────────────────── Locations ───────────────────────────
 @api.route('/locations', methods=['GET'])
 def get_locations():
     locations = Location.query.all()
@@ -160,26 +89,125 @@ def get_locations():
             "name": loc.name,
             "latitude": loc.latitude,
             "longitude": loc.longitude
-        }
-        for loc in locations
+        } for loc in locations
     ])
+
 
 @api.route('/locations', methods=['POST'])
 def create_location():
     data = request.get_json()
-    name = data.get("name")
-    latitude = data.get("latitude")
-    longitude = data.get("longitude")
+    if not all(k in data for k in ("name", "latitude", "longitude")):
+        return jsonify({"error": "Missing name, latitude or longitude"}), 400
 
-    if not name or latitude is None or longitude is None:
-        return jsonify({"error": "Missing name, latitude, or longitude"}), 400
+    loc = Location(name=data["name"],
+                   latitude=data["latitude"],
+                   longitude=data["longitude"])
+    db.session.add(loc)
+    db.session.commit()
+    return jsonify({"message": "Location created", "location_id": loc.id}), 201
 
-    location = Location(name=name, latitude=latitude, longitude=longitude)
-    db.session.add(location)
+
+# ───────────────────────────── Orders ──────────────────────────────
+@api.route('/orders', methods=['POST'])
+def create_order():
+    data = request.get_json()
+    user_id    = data.get("user_id")
+    product_id = data.get("product_id")
+    quantity   = data.get("quantity", 1)
+
+    if not user_id or not product_id:
+        return jsonify({"error": "Missing user_id or product_id"}), 400
+
+    product = Product.query.get(product_id)
+    if not product or not product.available:
+        return jsonify({"error": "Invalid or unavailable product"}), 404
+
+    total_price = product.price * quantity
+    order = Order(user_id=user_id, product_id=product_id,
+                  quantity=quantity, total_price=total_price,
+                  timestamp=datetime.now())
+    db.session.add(order)
     db.session.commit()
 
     return jsonify({
-        "message": "Location created",
-        "location_id": location.id
+        "message": "Order created",
+        "order": {
+            "id": order.id,
+            "user_id": user_id,
+            "product_id": product_id,
+            "quantity": quantity,
+            "total_price": total_price,
+            "timestamp": order.timestamp
+        }
     }), 201
+
+
+# ───────────────────────────── Users / Auth ────────────────────────
+@api.route('/users', methods=['GET'])
+def get_users():
+    users = User.query.all()
+    return jsonify([
+        {
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "role": u.role,
+            "confirmed": bool(u.confirmed)
+        } for u in users
+    ])
+
+
+@api.route('/users/unconfirmed')
+def unconfirmed_users():
+    unconfirmed = User.query.filter_by(confirmed=False).all()
+    return jsonify([
+        {"id": u.id, "username": u.username, "email": u.email} for u in unconfirmed
+    ])
+
+
+@api.route('/users/confirm/<int:user_id>', methods=['PUT'])
+def confirm_user(user_id):
+    user = User.query.get_or_404(user_id)
+    user.confirmed = True
+    db.session.commit()
+    return jsonify({"message": "User confirmed"})
+
+
+@api.route('/signup', methods=['POST'])
+def signup():
+    data = request.get_json()
+    required = ('username', 'password', 'email')
+    if not all(k in data for k in required):
+        return jsonify({"error": "Missing signup fields"}), 400
+
+    user = User(username=data['username'],
+                password=data['password'],   # TODO: hash
+                email=data['email'],
+                role='farmer',
+                confirmed=False)
+    db.session.add(user)
+    db.session.commit()
+    return jsonify({"message": "Signup received – awaiting confirmation"}), 201
+
+
+@api.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    user = User.query.filter_by(username=data['username']).first()
+    if not user or user.password != data['password']:
+        return jsonify({"error": "Invalid credentials"}), 401
+
+    return jsonify({"user": {
+        "id":        user.id,
+        "username":  user.username,
+        "role":      user.role,
+        "confirmed": bool(user.confirmed)
+    }})
+
+
+# ─────────────────────── Debug helper (optional) ───────────────────
+@api.route('/debug_tables')
+def debug_tables():
+    inspector = inspect(db.engine)
+    return jsonify(inspector.get_table_names())
 

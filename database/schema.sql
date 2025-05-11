@@ -3,6 +3,8 @@ CREATE TABLE users (
     username TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL,
     email TEXT,
+    role TEXT DEFAULT 'farmer',
+    confirmed INTEGER DEFAULT 0,    
     is_admin BOOLEAN DEFAULT 0
 );
 
